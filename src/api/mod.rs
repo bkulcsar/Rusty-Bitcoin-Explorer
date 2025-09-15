@@ -24,7 +24,7 @@ mod connected;
 
 use crate::parser::blk_file::BlkFile;
 use crate::parser::errors::{OpError, OpResult};
-use crate::parser::script::{evaluate_script, ScriptInfo};
+use crate::parser::script::{evaluate_script, evaluate_script_with_chain, ScriptInfo};
 use crate::parser::tx_index::TxDB;
 use std::ops::Deref;
 use std::path::Path;
@@ -40,6 +40,34 @@ pub use crate::parser::proto::full_proto::{FBlock, FBlockHeader, FTransaction, F
 pub use crate::parser::proto::simple_proto::{SBlock, SBlockHeader, STransaction, STxOut};
 pub use bitcoin::hashes::hex::{FromHex, ToHex};
 pub use bitcoin::{Address, Block, BlockHash, BlockHeader, Network, Script, Transaction, Txid};
+
+/// Supported blockchain variants.
+///
+/// Currently the internal parsing logic relies on the `bitcoin` crate's data
+/// structures which are compatible with Ravencoin's block / transaction
+/// serialization (headers & tx formats are structurally the same 80 byte header
+/// + varint count + transactions). Script classification works, but address
+/// encoding for Ravencoin still uses Bitcoin's network prefixes as a
+/// placeholder. A future enhancement can introduce proper Ravencoin address
+/// encoding (base58 prefixes 60 / 122 and bech32 hrp `rvn`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Chain {
+    Bitcoin,
+    Ravencoin,
+}
+
+impl Chain {
+    #[inline]
+    pub fn is_ravencoin(&self) -> bool { matches!(self, Chain::Ravencoin) }
+
+    #[inline]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Chain::Bitcoin => "bitcoin",
+            Chain::Ravencoin => "ravencoin",
+        }
+    }
+}
 
 ///
 /// Extract addresses from a script public key.
@@ -58,10 +86,28 @@ pub fn get_addresses_from_script(script_pub_key: &str) -> OpResult<ScriptInfo> {
     Ok(evaluate_script(&script, Network::Bitcoin))
 }
 
+/// Same as `get_addresses_from_script` but allowing explicit chain selection.
+///
+/// For `Chain::Ravencoin` the addresses will include proper Ravencoin-encoded
+/// addresses (starting with 'R'/'r') and asset script detection.
+pub fn get_addresses_from_script_for_chain(
+    script_pub_key: &str,
+    chain: Chain,
+) -> OpResult<ScriptInfo> {
+    let script = Script::from_hex(script_pub_key)?;
+    let network = match chain {
+        Chain::Bitcoin => Network::Bitcoin,
+        Chain::Ravencoin => Network::Bitcoin, // Use Bitcoin network for parsing, but enable RVN features
+    };
+    let is_ravencoin = chain.is_ravencoin();
+    Ok(evaluate_script_with_chain(&script, network, is_ravencoin))
+}
+
 pub struct InnerDB {
     pub block_index: BlockIndex,
     pub blk_file: BlkFile,
     pub tx_db: TxDB,
+    pub chain: Chain,
 }
 
 ///
@@ -105,6 +151,21 @@ impl BitcoinDB {
     /// let db = BitcoinDB::new(path, true).unwrap();
     /// ```
     pub fn new(p: &Path, tx_index: bool) -> OpResult<BitcoinDB> {
+        Self::new_with_chain(p, tx_index, Chain::Bitcoin)
+    }
+
+    /// Construct a database reader for Ravencoin data directory.
+    ///
+    /// Layout of the datadir is expected to mirror Bitcoin Core's (i.e.
+    /// `blocks/`, `blocks/index/`, optional `indexes/txindex/`).
+    ///
+    /// NOTE: Address encoding still returns Bitcoin style addresses; script
+    /// classification & block / transaction parsing work.
+    pub fn new_ravencoin(p: &Path, tx_index: bool) -> OpResult<BitcoinDB> {
+        Self::new_with_chain(p, tx_index, Chain::Ravencoin)
+    }
+
+    fn new_with_chain(p: &Path, tx_index: bool, chain: Chain) -> OpResult<BitcoinDB> {
         if !p.exists() {
             return Err(OpError::from("data_dir does not exist"));
         }
@@ -121,6 +182,7 @@ impl BitcoinDB {
             block_index,
             blk_file: BlkFile::new(blk_path.as_path())?,
             tx_db,
+            chain,
         };
         Ok(BitcoinDB(Arc::new(inner)))
     }
@@ -154,6 +216,9 @@ impl BitcoinDB {
         }
         records
     }
+
+    /// Return the chain variant this DB instance was opened for.
+    pub fn chain(&self) -> Chain { self.chain }
 
     ///
     /// Get block header information.

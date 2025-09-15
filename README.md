@@ -9,29 +9,63 @@
 `bitcoin_explorer` is an efficient library for decoding transaction information from
 bitcoin blockchain.
 
+## Ravencoin Support (Experimental)
+
+Experimental parsing support for the Ravencoin blockchain has been added. You can open a Ravencoin data directory (same layout as Bitcoin Core) using `BitcoinDB::new_ravencoin(path, txindex)`.
+
+What works:
+
+-   Reading block index, blocks and transactions (structures are compatible)
+-   Script pattern classification (P2PKH, P2SH, multisig, etc.)
+-   Chain differentiation via `db.chain()` method
+-   Enhanced script evaluation with `get_addresses_from_script_for_chain(script, Chain::Ravencoin)`
+-   **Proper Ravencoin address encoding** - generates valid Ravencoin addresses (R/r prefixes)
+
+Limitations (to be addressed in future iterations):
+
+-   Block/transaction iterators still use Bitcoin-style address encoding in output formats. Enhanced functionality is available through new API functions.
+-   Asset-related script detection is implemented but needs real-world testing with Ravencoin transaction data.
+-   Transaction and block iterators do not yet differentiate by chain type for address encoding.
+
+Example:
+
+```rust
+use bitcoin_explorer::{BitcoinDB, Chain};
+use std::path::Path;
+
+let path = Path::new("/home/user/.raven");
+let db = BitcoinDB::new_ravencoin(path, false).unwrap();
+println!("chain = {:?}", db.chain()); // Chain::Ravencoin
+println!("blocks on disk = {}", db.get_block_count());
+
+// Enhanced script evaluation
+use bitcoin_explorer::get_addresses_from_script_for_chain;
+let script_info = get_addresses_from_script_for_chain("76a914...", Chain::Ravencoin).unwrap();
+```
+
 Support bitcoin MainNet, might support other networks in the future.
 
 ## Features
 
 ### **1. Block & Script Decoding**
 
-- Query blocks based on block heights or block hash.
-- Support `tx_index=1`.
-- Find input addresses using UTXO cache (`iter_connected_block()`).
+-   Query blocks based on block heights or block hash.
+-   Support `tx_index=1`.
+-   Find input addresses using UTXO cache (`iter_connected_block()`).
 
 ### **2. Concurrency + Iterator + Sequential Output**
 
-- Fast concurrent deserializing but producing sequential output.
-- Native Iterator interface (support `for in` syntax).
+-   Fast concurrent deserializing but producing sequential output.
+-   Native Iterator interface (support `for in` syntax).
 
 ### **3. Small Memory Footprint (< 4 GB RAM)**
 
-- Use a fast on-disk UTXO storage (RocksDB).
+-   Use a fast on-disk UTXO storage (RocksDB).
 
 ### **4. Build for Rust + Python (Multi-OS PyPI wheels)**
 
-- Built and published PyPI wheels for `python 3.6-3.10` across `Windows x86/x64`, `MacOS x86_64/arm64`, and `Linux x86_64`.
-- Rust library on [crates.io](https://crates.io) called *bitcoin-explorer*.
+-   Built and published PyPI wheels for `python 3.6-3.10` across `Windows x86/x64`, `MacOS x86_64/arm64`, and `Linux x86_64`.
+-   Rust library on [crates.io](https://crates.io) called _bitcoin-explorer_.
 
 ## Documentation
 
@@ -40,6 +74,7 @@ See [Rust Documentation](https://docs.rs/bitcoin-explorer/)
 ## Examples
 
 ### Get total number of blocks and transactions available on disk
+
 ```rust
 use bitcoin_explorer::{BitcoinDB, FConnectedBlock, SConnectedBlock};
 use std::path::Path;
@@ -174,10 +209,10 @@ SSD for better performance.
 
 ## Benchmarking
 
-- OS: `x86_64` Windows 10
-- CPU: Intel i7-9700 @ 3.00GHZ (4-core, 8-threads)
-- Memory: 16 GB 2667 Mhz
-- Disk: WDC SN730 512GB (SSD)
+-   OS: `x86_64` Windows 10
+-   CPU: Intel i7-9700 @ 3.00GHZ (4-core, 8-threads)
+-   Memory: 16 GB 2667 Mhz
+-   Disk: WDC SN730 512GB (SSD)
 
 ### Iteration Through All Blocks (0 - 700000)
 
@@ -185,10 +220,10 @@ SSD for better performance.
 db.iter_block::<SBlock>(0, 700000)
 ```
 
-- Time: about 10 minutes
-- Peak Memory: <= 500 MB
+-   Time: about 10 minutes
+-   Peak Memory: <= 500 MB
 
-### Iteration Through All Blocks (0 - 700000) With Input Addresses 
+### Iteration Through All Blocks (0 - 700000) With Input Addresses
 
 ```rust
 db.iter_connected_block::<SConnectedBlock>(700000)
@@ -202,8 +237,8 @@ Compile with default features (Cargo.toml):
 bitcoin-explorer = "^1.2"
 ```
 
-- Time: about 2.5 hours
-- Peak Memory: 4 GB
+-   Time: about 2.5 hours
+-   Peak Memory: 4 GB
 
 #### Using non-default configuration (large RAM for good performance)
 
@@ -213,8 +248,8 @@ Compile with non-default features (Cargo.toml):
 bitcoin-explorer = { version = "^1.2", default-features = false }
 ```
 
-- Time: about 30 minutes
-- Peak Memory: 32 GB
+-   Time: about 30 minutes
+-   Peak Memory: 32 GB
 
 ## Notes
 
@@ -231,6 +266,7 @@ Copyright (C) 2009-2020 The Bitcoin Core developers`.
 
 If you have more than 32 GB memory, you might try `default-features = false`
 for faster performance on `db.iter_connected_block()`
+
 ```toml
 bitcoin-explorer = { version = "^1.2", default-features = false }
 ```

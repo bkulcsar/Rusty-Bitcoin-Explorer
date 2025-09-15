@@ -14,6 +14,9 @@ pub mod reader;
 /// add multi-sig pattern recognition and decode addresses from multi-sig script
 pub mod script;
 
+/// ravencoin-specific address encoding and asset script detection
+pub mod ravencoin;
+
 /// on disk transaction index database
 pub mod tx_index;
 

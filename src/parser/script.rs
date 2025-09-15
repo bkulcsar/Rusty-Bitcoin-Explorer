@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use Instruction::{Op, PushBytes};
 
+use crate::parser::ravencoin::{detect_ravencoin_asset_script, ravencoin_address_from_payload, RavencoinNetwork, RavencoinScriptType};
+
 ///
 /// Different types of bitcoin Scripts.
 ///
@@ -25,23 +27,59 @@ pub enum ScriptType {
     WitnessProgram,
     Unspendable,
     NotRecognised,
+    // Ravencoin-specific types
+    RavencoinAssetIssuance,
+    RavencoinAssetTransfer,
+    RavencoinAssetReissuance,
+    RavencoinAssetOwnership,
+    RavencoinAssetQualifier,
+    RavencoinAssetRestricted,
+    RavencoinAssetMessage,
 }
 
 ///
 /// `ScriptInfo` stores a list of addresses extracted from ScriptPubKey.
+/// For Ravencoin scripts, may contain both Bitcoin-format and Ravencoin-format addresses.
 ///
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScriptInfo {
     pub addresses: Vec<Address>,
     pub pattern: ScriptType,
+    /// Ravencoin-specific addresses (when applicable)
+    pub ravencoin_addresses: Option<Vec<String>>,
 }
 
 ///
 /// This function extract addresses and script type from Script.
 ///
 pub fn evaluate_script(script: &Script, net: Network) -> ScriptInfo {
+    evaluate_script_with_chain(script, net, false)
+}
+
+///
+/// Enhanced script evaluation with optional Ravencoin asset detection and address encoding.
+///
+pub fn evaluate_script_with_chain(script: &Script, net: Network, is_ravencoin: bool) -> ScriptInfo {
+    // First check for Ravencoin-specific asset scripts if applicable
+    if is_ravencoin {
+        if let Some(asset_type) = detect_ravencoin_asset_script(script) {
+            let script_type = match asset_type {
+                RavencoinScriptType::AssetIssuance => ScriptType::RavencoinAssetIssuance,
+                RavencoinScriptType::AssetTransfer => ScriptType::RavencoinAssetTransfer,
+                RavencoinScriptType::AssetReissuance => ScriptType::RavencoinAssetReissuance,
+                RavencoinScriptType::AssetOwnership => ScriptType::RavencoinAssetOwnership,
+                RavencoinScriptType::AssetQualifier => ScriptType::RavencoinAssetQualifier,
+                RavencoinScriptType::AssetRestricted => ScriptType::RavencoinAssetRestricted,
+                RavencoinScriptType::AssetMessage => ScriptType::RavencoinAssetMessage,
+                _ => ScriptType::NotRecognised,
+            };
+            return ScriptInfo::from_vec(Vec::new(), script_type);
+        }
+    }
+    
+    // Standard Bitcoin script evaluation
     let address = Address::from_script(script, net);
-    if script.is_p2pk() {
+    let mut script_info = if script.is_p2pk() {
         ScriptInfo::new(p2pk_to_address(script), ScriptType::Pay2PublicKey)
     } else if script.is_p2pkh() {
         ScriptInfo::new(address, ScriptType::Pay2PublicKeyHash)
@@ -61,7 +99,25 @@ pub fn evaluate_script(script: &Script, net: Network) -> ScriptInfo {
         ScriptInfo::from_vec(multisig_addresses(script), ScriptType::Pay2MultiSig)
     } else {
         ScriptInfo::new(address, ScriptType::NotRecognised)
+    };
+    
+    // Add Ravencoin addresses if applicable
+    if is_ravencoin {
+        let ravencoin_network = RavencoinNetwork::MAINNET; // TODO: Support testnet detection
+        let mut ravencoin_addrs = Vec::new();
+        
+        for addr in &script_info.addresses {
+            if let Some(rvn_addr) = ravencoin_address_from_payload(&addr.payload, ravencoin_network) {
+                ravencoin_addrs.push(rvn_addr);
+            }
+        }
+        
+        if !ravencoin_addrs.is_empty() {
+            script_info = script_info.with_ravencoin_addresses(ravencoin_addrs);
+        }
     }
+    
+    script_info
 }
 
 impl ScriptInfo {
@@ -74,7 +130,16 @@ impl ScriptInfo {
     }
 
     pub(crate) fn from_vec(addresses: Vec<Address>, pattern: ScriptType) -> Self {
-        Self { addresses, pattern }
+        Self { 
+            addresses, 
+            pattern,
+            ravencoin_addresses: None,
+        }
+    }
+    
+    pub(crate) fn with_ravencoin_addresses(mut self, ravencoin_addresses: Vec<String>) -> Self {
+        self.ravencoin_addresses = Some(ravencoin_addresses);
+        self
     }
 }
 
@@ -253,6 +318,13 @@ impl fmt::Display for ScriptType {
             ScriptType::WitnessProgram => write!(f, "WitnessProgram"),
             ScriptType::Unspendable => write!(f, "Unspendable"),
             ScriptType::NotRecognised => write!(f, "NotRecognised"),
+            ScriptType::RavencoinAssetIssuance => write!(f, "RavencoinAssetIssuance"),
+            ScriptType::RavencoinAssetTransfer => write!(f, "RavencoinAssetTransfer"),
+            ScriptType::RavencoinAssetReissuance => write!(f, "RavencoinAssetReissuance"),
+            ScriptType::RavencoinAssetOwnership => write!(f, "RavencoinAssetOwnership"),
+            ScriptType::RavencoinAssetQualifier => write!(f, "RavencoinAssetQualifier"),
+            ScriptType::RavencoinAssetRestricted => write!(f, "RavencoinAssetRestricted"),
+            ScriptType::RavencoinAssetMessage => write!(f, "RavencoinAssetMessage"),
         }
     }
 }

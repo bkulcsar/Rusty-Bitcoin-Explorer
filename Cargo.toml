@@ -1,5 +1,5 @@
 [package]
-name = "bitcoin-explorer"
+name = "bitcoin-explorer-raven"
 version = "1.2.20"
 edition = "2018"
 readme = "README.md"
@@ -28,6 +28,11 @@ db-key = "=0.0.5"
 hash_hasher = "^2.0.3"
 rocksdb = { version = "0.20.1", optional = true }
 tempdir = { version = "^0.3.7", optional = true }
+num-bigint = "^0.4"
+hex = "^0.4"
+num-integer = "^0.1"
+bs58 = "^0.5"
+sha2 = "^0.10"
 
 [lib]
 name = "bitcoin_explorer"
